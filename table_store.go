@@ -157,6 +157,20 @@ func (store *tableStore) getString(text string, hash uint32) (slot, bool) {
 // already proved that key is a string constant. It avoids repeating generic
 // slot-kind dispatch while retaining content equality for distinct string
 // objects with the same bytes.
+// mainStringEntry returns the entry at key's main position when it holds the
+// identical key representation. Small tables usually find their constant keys
+// there, so executors try it before walking the chain.
+func (store *tableStore) mainStringEntry(key slot, hash uint32) *tableEntry {
+	if store.entries.len() == 0 {
+		return nil
+	}
+	entry := store.entries.at(store.mainIndex(hash))
+	if entry.key.ref != key.ref || entry.key.bits != key.bits {
+		return nil
+	}
+	return entry
+}
+
 func (store *tableStore) getStringSlot(key slot, hash uint32) (slot, bool) {
 	if store.entries.len() == 0 {
 		return nilSlot, false
@@ -167,9 +181,11 @@ func (store *tableStore) getStringSlot(key slot, hash uint32) (slot, bool) {
 		if entry.hash == entryHashEmpty {
 			return nilSlot, false
 		}
-		if entry.hash == hash &&
-			entry.key.isString() &&
-			stringSlotsEqual(entry.key, key) {
+		// Identical bits are the common interned case and need no call.
+		if entry.key.ref == key.ref && entry.key.bits == key.bits ||
+			entry.hash == hash &&
+				entry.key.isString() &&
+				stringSlotContentsEqual(entry.key, key) {
 			value := entry.value
 			return value, !value.isNil()
 		}
@@ -220,10 +236,11 @@ func (store *tableStore) findStringSlot(
 		if entry.hash == entryHashEmpty {
 			return 0, false
 		}
-		if entry.hash == hash &&
-			!entry.value.isNil() &&
-			entry.key.isString() &&
-			stringSlotsEqual(entry.key, key) {
+		if (entry.key.ref == key.ref && entry.key.bits == key.bits ||
+			entry.hash == hash &&
+				entry.key.isString() &&
+				stringSlotContentsEqual(entry.key, key)) &&
+			!entry.value.isNil() {
 			return index, true
 		}
 		if entry.next == 0 {
