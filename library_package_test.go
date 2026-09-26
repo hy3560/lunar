@@ -340,6 +340,36 @@ return ok,type(message),string.find(message,"loop or previous error",1,true)~=ni
 	)
 }
 
+func TestPackageLuaLoaderContinuesWhenScriptLoadingIsDisabled(t *testing.T) {
+	state := newStateWithPackage(t, Options{})
+	defer state.Close()
+	if err := state.OpenString(); err != nil {
+		t.Fatal(err)
+	}
+
+	chunk := mustLoadString(t, state, "@package-disabled-loader.lua", `
+local ok,missing=pcall(require,"missing")
+package.loaders[3]=function(name)
+  return function() return "virtual "..name end
+end
+return require("virt"),ok,
+  string.find(missing,"\n\tscript-file loading is disabled",1,true)~=nil,
+  string.find(missing,"no file",1,true)==nil
+`)
+	results, err := state.Call(chunk.Value())
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertTestValues(
+		t,
+		results,
+		state.String("virtual virt"),
+		Bool(false),
+		Bool(true),
+		Bool(true),
+	)
+}
+
 func TestPackageRequireSentinelRemainsCompact(t *testing.T) {
 	state := newStateWithPackage(t, Options{})
 	defer state.Close()
