@@ -458,6 +458,13 @@ func packageFindSource(
 		)
 	}
 	path = luaCString(path)
+	if frame.thread.state.scriptLoader.opener == nil {
+		// Without script-file access no path entry can be opened. Report
+		// that once, like a searcher's "no file" lines, so later searchers
+		// still run and a failed require still explains why no file was
+		// tried.
+		return nil, "", "\n\tscript-file loading is disabled", nil
+	}
 	mappedName := packageModuleName(
 		name,
 		frame.thread.state.scriptLoader.separator,
@@ -490,8 +497,7 @@ func packageFindSource(
 		if err == nil {
 			return reader, filename, "", nil
 		}
-		if !errors.Is(err, fs.ErrNotExist) &&
-			!errors.Is(err, ErrScriptLoadingDisabled) {
+		if !errors.Is(err, fs.ErrNotExist) {
 			return nil, "", "", &fileLoadError{
 				operation: "open",
 				name:      filename,
