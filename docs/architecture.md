@@ -151,7 +151,9 @@ opener. `HostLoader` snapshots `LUA_PATH` during `New`; `fs.FS` and custom-opene
 modes use slash-separated names and default `package.path` to
 `?.lua;?/init.lua`. `LoadFile`, `DoFile`, base-library file loading, and the
 Lua package source searcher all pass through the same opener. Only
-`fs.ErrNotExist` advances a module search to the next path candidate.
+`fs.ErrNotExist` advances a module search to the next path candidate. With no
+opener, the source searcher tries no candidates and reports that script-file
+loading is disabled, so searchers added after it still run.
 
 The script backend is immutable for the State's lifetime. Lua may mutate
 `package.path`, which changes template expansion without changing authority.

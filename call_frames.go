@@ -127,13 +127,16 @@ func (thread *threadObject) publishFunctionCall(
 ) {
 	frameIndex := len(thread.frames)
 	thread.frames = thread.frames[:frameIndex+1]
-	thread.frames[frameIndex] = activation{
-		function:      function,
-		base:          uint32(base),
-		resultBase:    uint32(resultBase),
-		callerExtent:  uint32(thread.frameExtent),
-		wantedResults: int32(wantedResults),
-	}
+	// Field stores avoid building the record in a temporary and copying it
+	// with wide loads that cannot forward from the narrower pending stores.
+	frame := &thread.frames[frameIndex]
+	frame.function = function
+	frame.base = uint32(base)
+	frame.resultBase = uint32(resultBase)
+	frame.pc = 0
+	frame.tailCalls = 0
+	frame.callerExtent = uint32(thread.frameExtent)
+	frame.wantedResults = int32(wantedResults)
 	thread.top = frameEnd
 	if frameEnd > thread.frameExtent {
 		thread.frameExtent = frameEnd
@@ -678,9 +681,12 @@ func (thread *threadObject) reserveFrames(required int) {
 	)
 }
 
+// fillNil stores nil into a register range. Frames are short and their slots
+// usually hold scalars already, so plain stores beat testing each old value;
+// a write barrier runs only while the Go collector is marking.
 func (thread *threadObject) fillNil(from, to int) {
 	for index := from; index < to; index++ {
-		thread.values[index] = nilSlot
+		thread.values[index] = slot{bits: nilSlotBits}
 	}
 }
 

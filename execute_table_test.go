@@ -2068,3 +2068,138 @@ return {
 `)
 	benchmarkExecutorFunction(b, state, function)
 }
+
+func TestStringKeysMatchByContentAcrossRepresentations(t *testing.T) {
+	// Strings longer than the short-string cache are not interned, so a key
+	// built at runtime and a constant with the same content are separate
+	// objects. Lookups must still find the same entry.
+	state, err := New(Options{Libraries: CoreLibraries()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer state.Close()
+	results, err := state.DoString("=keys", `
+local built = string.rep("k", 69) .. "k"
+local t = {}
+t[built] = 1
+t.kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk = 2
+local count = 0
+for _ in pairs(t) do count = count + 1 end
+local other = string.rep("k", 70)
+t[other] = 3
+local after = 0
+for _ in pairs(t) do after = after + 1 end
+return t.kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk, t[built], count, after
+`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertTestValues(t, results, Number(3), Number(3), Number(1), Number(1))
+}
+
+func TestConstantFieldWritesKeepStoreBookkeeping(t *testing.T) {
+	// A constant-key write to an existing field replaces the value in
+	// place, while assigning nil deletes the entry and updates the counts
+	// that growth and compaction rely on.
+	state, err := New(Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer state.Close()
+	results, err := state.DoString("=fields", `
+local t = {alpha = 1, beta = 2}
+t.alpha = nil
+t.beta = 3
+return t, t.alpha, t.beta
+`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertTestValues(t, results[1:], Nil(), Number(3))
+	handle, ok := results[0].AsTable()
+	if !ok {
+		t.Fatalf("result = %v; want a table", results[0])
+	}
+	table := handle.runtimeObject()
+	if table.store.live != 1 || table.store.dead != 1 {
+		t.Fatalf(
+			"store live, dead = %d, %d; want 1, 1",
+			table.store.live,
+			table.store.dead,
+		)
+	}
+}
+
+// indexChainLua51Cases cover constant-key reads that follow table-valued
+// __index links, including links past the interpreter's inline limit, and
+// string equality decided without leaving the interpreter.
+var indexChainLua51Cases = []lua51Case{
+	{
+		name: "fields resolve at every depth of a class chain",
+		source: `
+local class = {d1 = 1}
+for depth = 2, 7 do
+  class = setmetatable({["d" .. depth] = depth}, {__index = class})
+end
+local object = setmetatable({}, {__index = class})
+return object.d1, object.d4, object.d5, object.d7, object.missing`,
+		want: "ok 1 4 5 7 nil",
+	},
+	{
+		name: "methods resolve through a class chain",
+		source: `
+local Base = {}
+Base.__index = Base
+function Base:name() return "base:" .. self.tag end
+local Derived = setmetatable({}, Base)
+Derived.__index = Derived
+local object = setmetatable({tag = "x"}, Derived)
+return object:name()`,
+		want: "ok 'base:x'",
+	},
+	{
+		name: "a function link inside the chain is called",
+		source: `
+local last = setmetatable({}, {__index = function(_, key) return key .. "!" end})
+local middle = setmetatable({}, {__index = last})
+local object = setmetatable({}, {__index = middle})
+return object.field`,
+		want: "ok 'field!'",
+	},
+	{
+		name: "string methods use the string metatable",
+		source: `
+function string.shout(text) return text:upper() .. "!" end
+local text = "abc"
+return text:len(), text:shout(), text.missing`,
+		want: "ok 3 'ABC!' nil",
+	},
+	{
+		name: "strings without an index table cannot be indexed",
+		source: `
+getmetatable("").__index = nil
+local text = "abc"
+return text:len()`,
+		want: "error 'case:4: attempt to index local 'text' (a string value)'",
+	},
+	{
+		name: "numbers cannot be indexed",
+		source: `
+local number = 5
+return number.field`,
+		want: "error 'case:3: attempt to index local 'number' (a number value)'",
+	},
+	{
+		name: "string equality compares content",
+		source: `
+local long = string.rep("x", 100)
+local built = "ab" .. "c"
+return built == "abc", built == "abd", long == string.rep("x", 100),
+  long == string.rep("x", 99) .. "y", "a" == "ab"`,
+		want: "ok true false true false false",
+	},
+}
+
+func TestExecutorIndexChainsAndStringEquality(t *testing.T) {
+	runLua51Cases(t, indexChainLua51Cases)
+}

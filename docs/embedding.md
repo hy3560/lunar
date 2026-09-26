@@ -500,8 +500,8 @@ loader := lua.FSLoader(scripts).
 ```
 
 Lua may later assign `package.path`; that changes candidate names but never
-the State's script backend. Preloaded Go modules remain usable when script
-loading is denied. `package.cpath` is empty, there are no C-module searchers,
+the State's script backend. Preloaded Go modules, and searchers a script
+adds to `package.loaders`, remain usable when script loading is denied. `package.cpath` is empty, there are no C-module searchers,
 and `package.loadlib` reports that dynamic libraries are unavailable.
 
 `ScriptLoader` governs program loading only. The IO and OS libraries carry

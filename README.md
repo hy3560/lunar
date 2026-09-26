@@ -81,48 +81,62 @@ callbacks, tables, errors, cancellation, coroutines, and lifecycle.
 
 ## Performance
 
-Medians from 15 runs on an AMD Ryzen 9 9950X3D under Linux/amd64 (WSL2),
-using Go 1.26.0. The [measurement report](benchmarks/results/2026-09-08-linux-amd64-integrated-table-lookup/)
+Timings are medians from 15 runs on an AMD Ryzen 7 4800U under
+Linux/amd64, using Go 1.27.1. The
+[measurement report](benchmarks/results/2026-09-26-linux-amd64-interpreter/)
 records revisions, build settings, and confidence intervals. Lower is better.
 
-| Established Lua program | Lunar | GopherLua | go-lua |
-| --- | ---: | ---: | ---: |
-| binary-trees | **131.69 ms** | 153.78 ms | 159.24 ms |
-| fannkuch-redux | **14.46 ms** | 29.25 ms | 32.59 ms |
-| n-body | **42.80 ms** | 161.24 ms | 170.93 ms |
-| spectral-norm | **42.10 ms** | 144.71 ms | 133.44 ms |
+### Are We Fast Yet
 
-| Embedding operation | Lunar | GopherLua | go-lua |
-| --- | ---: | ---: | ---: |
-| Go calls Lua with scalar arguments | 53.92 ns | **51.01 ns** | 123.50 ns |
-| Lua calls Go 1,000 times | **51.60 µs** | 89.80 µs | 67.53 µs |
-| Lua echoes a 128-byte Go string | 77.79 ns | **66.06 ns** | 126.30 ns |
-| Lua checksums a reused Go-built table | **229.8 ns** | 519.7 ns | 846.7 ns |
-| Build a table in Go, then checksum it in Lua | 2.164 µs | **1.250 µs** | 1.453 µs |
+[Are We Fast Yet](https://github.com/smarr/are-we-fast-yet) programs model
+typical object-oriented code: classes built with metatables, closures, many
+small objects, strings, and arrays.
 
-The retained-memory figures below are earlier Apple M3 Pro / Go 1.25.1
-measurements: [CBOR graph](benchmarks/results/2026-07-28-darwin-arm64-m3-pro/)
-and [table shapes](benchmarks/results/2026-08-05-darwin-arm64-m3-pro/).
-
-| Live heap added after loading and GC | Lunar | GopherLua | Ratio |
+| Program | Lunar | GopherLua | go-lua |
 | --- | ---: | ---: | ---: |
-| 9 MB CBOR graph: 183,513 tables, 938,452 entries | **72.2 MiB** | 542.3 MiB | 7.5× |
-| 25,000 four-field tables, repeated 16 B keys | **7.3 MiB** | 72.0 MiB | 9.9× |
-| 25,000 four-field tables, repeated 80 B keys | **14.9 MiB** | 78.1 MiB | 5.3× |
-| One table, 100,000 unique 16 B keys | **6.5 MiB** | 14.7 MiB | 2.26× |
-| One table, 100,000 unique 256 B keys | **29.4 MiB** | 37.6 MiB | 1.28× |
+| Richards | **595.0 ms** | 1,677.2 ms | 1,990.8 ms |
+| DeltaBlue | **124.5 ms** | 325.6 ms | 9,569.5 ms |
+| Json | **651.0 ms** | 1,670.2 ms | 1,982.6 ms |
+| CD | **2,541 ms** | 6,314 ms | 6,645 ms |
+| Bounce | **542.7 ms** | 2,143.7 ms | 2,874.0 ms |
+| List | **528.1 ms** | 1,247.2 ms | 1,401.1 ms |
+| Mandelbrot | **367.7 ms** | 1,681.1 ms | 2,563.6 ms |
+| NBody | **1,363 ms** | 5,631 ms | 8,151 ms |
+| Permute | **586.5 ms** | 1,387.6 ms | 1,740.5 ms |
+| Queens | **467.9 ms** | 1,187.8 ms | 1,527.9 ms |
+| Sieve | **561.5 ms** | 1,899.3 ms | 2,064.2 ms |
+| Storage | **519.3 ms** | 2,440.1 ms | 2,801.2 ms |
+| Towers | **899.0 ms** | 1,925.1 ms | 3,050.1 ms |
+
+### Benchmarks Game
+
+Four programs from the Computer Language Benchmarks Game, with inputs scaled
+for interpreters.
+
+| Program | Lunar | GopherLua | go-lua |
+| --- | ---: | ---: | ---: |
+| binary-trees | **250.5 ms** | 322.2 ms | 344.0 ms |
+| fannkuch-redux | **26.57 ms** | 62.56 ms | 73.84 ms |
+| n-body | **63.94 ms** | 335.20 ms | 444.98 ms |
+| spectral-norm | **66.49 ms** | 312.13 ms | 344.02 ms |
+
+### Retained memory
+
+Live heap added after loading data and collecting garbage
+([report](benchmarks/results/2026-09-25-linux-amd64-memory/)).
+
+| Workload | Lunar | GopherLua | Ratio |
+| --- | ---: | ---: | ---: |
+| 9 MB CBOR graph: 183,513 tables, 938,452 entries | **72.3 MiB** | 542.3 MiB | 7.5× |
+| 25,000 four-field tables, repeated 16 B keys | **7.4 MiB** | 72.0 MiB | 9.7× |
+| 25,000 four-field tables, repeated 80 B keys | **15.0 MiB** | 78.1 MiB | 5.2× |
+| One table, 100,000 unique 16 B keys | **6.5 MiB** | 14.8 MiB | 2.26× |
+| One table, 100,000 unique 256 B keys | **29.4 MiB** | 37.7 MiB | 1.28× |
 | One table, 100,000 unique 1 KiB keys | **102.7 MiB** | 110.9 MiB | 1.08× |
 
-The ratio depends on workload shape: Lunar wins on per-table overhead and
-on reusing repeated strings up to 64 bytes, while raw string bytes cost
-both runtimes the same, so the gap narrows toward 1× as string payload
-dominates. Loading the CBOR graph also allocates 7.3× less transient
-memory (**107.5 MB** versus 784.6 MB).
-
-The [measurement summaries](benchmarks/results/) include confidence intervals,
-allocation counts, and measurement conditions; the
-[benchmark protocol](benchmarks/README.md) lists the commands, inputs, and
-runtime versions.
+Lunar saves most on per-table overhead and repeated short strings; as raw
+string bytes dominate, the gap narrows toward 1×. The
+[benchmark protocol](benchmarks/README.md) lists commands and inputs.
 
 ## Compatibility
 
