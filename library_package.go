@@ -498,7 +498,7 @@ func packageFindSource(
 			return reader, filename, "", nil
 		}
 		if !errors.Is(err, fs.ErrNotExist) &&
-			!frame.thread.state.scriptLoader.packageSearchIgnoresOpenError {
+			!frame.thread.state.scriptLoader.searchSkipsOpenErrors {
 			return nil, "", "", &fileLoadError{
 				operation: "open",
 				name:      filename,
